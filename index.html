@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Kuis QR Code Interaktif</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- jsQR Library for QR Code Scanning -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <!-- QRCode.js Library for QR Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- SheetJS for Excel Import/Export -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        @media print {
+            body * { visibility: hidden; }
+            #printableArea, #printableArea * { visibility: visible; }
+            #printableArea { position: absolute; left: 0; top: 0; width: 100%; }
+            .no-print { display: none !important; }
+            .page-break { page-break-after: always; }
+        }
+        .scan-container {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            margin: 0 auto;
+            aspect-ratio: 3/4;
+            background-color: #000;
+            border-radius: 1rem;
+            overflow: hidden;
+        }
+        #video, #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800 min-h-screen flex flex-col">
+
+    <!-- Header / Navbar -->
+    <header class="bg-indigo-600 text-white shadow-md no-print sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <i class="fa-solid fa-qrcode text-3xl"></i>
+                <div>
+                    <h1 class="font-bold text-xl leading-tight">KuisQR Pro</h1>
+                    <p class="text-xs text-indigo-200">Sistem Kuis Interaktif Kartu QR</p>
+                </div>
+            </div>
+            <!-- Navigation Tabs -->
+            <nav class="hidden md:flex space-x-1 items-center">
+                <button onclick="switchTab('quiz')" id="tab-quiz" class="nav-btn px-4 py-2 rounded-lg font-medium transition bg-indigo-700 text-white">
+                    <i class="fa-solid fa-play mr-2"></i>Kuis
+                </button>
+                <button onclick="switchTab('students')" id="tab-students" class="nav-btn px-4 py-2 rounded-lg font-medium transition hover:bg-indigo-500 text-indigo-100">
+                    <i class="fa-solid fa-users mr-2"></i>Peserta
+                </button>
+                <button onclick="switchTab('questions')" id="tab-questions" class="nav-btn px-4 py-2 rounded-lg font-medium transition hover:bg-indigo-500 text-indigo-100">
+                    <i class="fa-solid fa-list-check mr-2"></i>Soal Kuis
+                </button>
+                <button onclick="switchTab('cards')" id="tab-cards" class="nav-btn px-4 py-2 rounded-lg font-medium transition hover:bg-indigo-500 text-indigo-100">
+                    <i class="fa-solid fa-address-card mr-2"></i>Kartu QR
+                </button>
+                <button onclick="switchTab('results')" id="tab-results" class="nav-btn px-4 py-2 rounded-lg font-medium transition hover:bg-indigo-500 text-indigo-100">
+                    <i class="fa-solid fa-trophy mr-2"></i>Papan Skor
+                </button>
+                <button onclick="resetAllData()" title="Reset Semua Data Ke Awal" class="ml-2 px-3 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-semibold transition">
+                    <i class="fa-solid fa-trash-can mr-1"></i>Reset
+                </button>
+            </nav>
+        </div>
+        <!-- Mobile Navigation Bottom -->
+        <div class="md:hidden flex justify-around bg-indigo-800 py-2 border-t border-indigo-700">
+            <button onclick="switchTab('quiz')" class="text-center text-xs text-white"><i class="fa-solid fa-play block text-lg mx-auto"></i>Kuis</button>
+            <button onclick="switchTab('students')" class="text-center text-xs text-indigo-200"><i class="fa-solid fa-users block text-lg mx-auto"></i>Peserta</button>
+            <button onclick="switchTab('questions')" class="text-center text-xs text-indigo-200"><i class="fa-solid fa-list-check block text-lg mx-auto"></i>Soal</button>
+            <button onclick="switchTab('cards')" class="text-center text-xs text-indigo-200"><i class="fa-solid fa-address-card block text-lg mx-auto"></i>Kartu</button>
+            <button onclick="switchTab('results')" class="text-center text-xs text-indigo-200"><i class="fa-solid fa-trophy block text-lg mx-auto"></i>Skor</button>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6">
+
+        <!-- TAB 1: MODE KUIS & SCANNER -->
+        <section id="view-quiz" class="tab-content space-y-6">
+            <!-- Selector Soal & Kontrol Utama -->
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div>
+                    <span class="text-xs font-semibold text-indigo-600 uppercase tracking-wider">Kuis Aktif</span>
+                    <h2 id="quiz-title" class="text-xl font-bold text-slate-800">Sesi Kuis QR Interaktif</h2>
+                </div>
+                <div class="flex flex-wrap gap-2 w-full md:w-auto">
+                    <button onclick="prevQuestion()" class="flex-1 md:flex-none px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-semibold transition">
+                        <i class="fa-solid fa-chevron-left mr-1"></i> Sebelum
+                    </button>
+                    <span id="question-number-badge" class="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg font-bold flex items-center justify-center">
+                        Soal 1 / 1
+                    </span>
+                    <button onclick="nextQuestion()" class="flex-1 md:flex-none px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition">
+                        Berikut <i class="fa-solid fa-chevron-right ml-1"></i>
+                    </button>
+                    <button onclick="resetCurrentAnswers()" class="px-3 py-2 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-lg font-semibold transition" title="Reset Jawaban Soal Ini">
+                        <i class="fa-solid fa-rotate-right"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Dashboard Kuis: Tampilan Soal & Scanner Camera -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- Sisi Kiri: Detail Soal & Jawaban Terdeteksi -->
+                <div class="lg:col-span-5 space-y-4">
+                    <!-- Card Soal -->
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                        <div class="flex justify-between items-center mb-3">
+                            <span id="question-category" class="bg-amber-100 text-amber-800 text-xs font-semibold px-2.5 py-0.5 rounded-full">Soal Pilihan Ganda</span>
+                            <span id="scanned-count-badge" class="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                                <i class="fa-solid fa-check-circle mr-1"></i>0 Terjawab
+                            </span>
+                        </div>
+                        <h3 id="question-text" class="text-lg font-semibold text-slate-800 mb-4 leading-snug">
+                            Belum ada soal tersedia.
+                        </h3>
+                        <!-- Pilihan Jawaban -->
+                        <div class="space-y-2.5">
+                            <div id="option-A-container" class="p-3 rounded-lg border border-slate-200 flex items-center justify-between transition">
+                                <div class="flex items-center space-x-3">
+                                    <span class="w-7 h-7 bg-indigo-100 text-indigo-700 font-bold rounded-full flex items-center justify-center text-sm">A</span>
+                                    <span id="opt-A-text" class="font-medium text-slate-700">-</span>
+                                </div>
+                                <span id="badge-count-A" class="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded-full font-bold">0</span>
+                            </div>
+                            <div id="option-B-container" class="p-3 rounded-lg border border-slate-200 flex items-center justify-between transition">
+                                <div class="flex items-center space-x-3">
+                                    <span class="w-7 h-7 bg-indigo-100 text-indigo-700 font-bold rounded-full flex items-center justify-center text-sm">B</span>
+                                    <span id="opt-B-text" class="font-medium text-slate-700">-</span>
+                                </div>
+                                <span id="badge-count-B" class="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded-full font-bold">0</span>
+                            </div>
+                            <div id="option-C-container" class="p-3 rounded-lg border border-slate-200 flex items-center justify-between transition">
+                                <div class="flex items-center space-x-3">
+                                    <span class="w-7 h-7 bg-indigo-100 text-indigo-700 font-bold rounded-full flex items-center justify-center text-sm">C</span>
+                                    <span id="opt-C-text" class="font-medium text-slate-700">-</span>
+                                </div>
+                                <span id="badge-count-C" class="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded-full font-bold">0</span>
+                            </div>
+                            <div id="option-D-container" class="p-3 rounded-lg border border-slate-200 flex items-center justify-between transition">
+                                <div class="flex items-center space-x-3">
+                                    <span class="w-7 h-7 bg-indigo-100 text-indigo-700 font-bold rounded-full flex items-center justify-center text-sm">D</span>
+                                    <span id="opt-D-text" class="font-medium text-slate-700">-</span>
+                                </div>
+                                <span id="badge-count-D" class="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded-full font-bold">0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Rekap Jawaban Masuk Realtime -->
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                        <h4 class="font-bold text-sm text-slate-700 mb-3 flex items-center justify-between">
+                            <span><i class="fa-solid fa-list-check text-indigo-600 mr-2"></i>Status Jawaban Peserta</span>
+                            <span id="live-scan-ratio" class="text-xs text-slate-500">0 / 0 Peserta</span>
+                        </h4>
+                        <div id="live-scanned-list" class="max-h-48 overflow-y-auto divide-y divide-slate-100 text-sm">
+                            <p class="text-slate-400 text-xs text-center py-4 italic">Buka kamera dan arahkan ke kartu QR siswa untuk merekam jawaban.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sisi Kanan: Pemindai Kamera Live -->
+                <div class="lg:col-span-7 flex flex-col items-center">
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 w-full flex flex-col items-center">
+                        <div class="flex justify-between items-center w-full mb-3">
+                            <div class="flex items-center space-x-2">
+                                <span class="relative flex h-3 w-3">
+                                  <span id="status-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 hidden"></span>
+                                  <span id="status-dot" class="relative inline-flex rounded-full h-3 w-3 bg-slate-400"></span>
+                                </span>
+                                <span id="camera-status-text" class="text-xs font-semibold text-slate-500">Kamera Mati</span>
+                            </div>
+                            <!-- Switch Camera Button -->
+                            <button id="toggle-camera-btn" onclick="toggleCamera()" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition flex items-center shadow">
+                                <i class="fa-solid fa-camera mr-2"></i>Mulai Pemindai
+                            </button>
+                        </div>
+
+                        <!-- Video Container with Overlay -->
+                        <div class="scan-container">
+                            <video id="video" playsinline muted></video>
+                            <canvas id="overlay"></canvas>
+                        </div>
+
+                        <!-- Info Bantuan Rotasi -->
+                        <div class="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-600 w-full grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                            <div class="p-1 bg-white rounded border border-slate-100 shadow-sm">
+                                <span class="font-bold text-indigo-600 block">Atas (0°)</span>
+                                <span>Jawaban A</span>
+                            </div>
+                            <div class="p-1 bg-white rounded border border-slate-100 shadow-sm">
+                                <span class="font-bold text-indigo-600 block">Kiri (90°)</span>
+                                <span>Jawaban B</span>
+                            </div>
+                            <div class="p-1 bg-white rounded border border-slate-100 shadow-sm">
+                                <span class="font-bold text-indigo-600 block">Bawah (180°)</span>
+                                <span>Jawaban C</span>
+                            </div>
+                            <div class="p-1 bg-white rounded border border-slate-100 shadow-sm">
+                                <span class="font-bold text-indigo-600 block">Kanan (270°)</span>
+                                <span>Jawaban D</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: MANAJEMEN PESERTA -->
+        <section id="view-students" class="tab-content hidden space-y-6">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <div>
+                    <h2 class="text-xl font-bold text-slate-800">Manajemen Peserta Kuis</h2>
+                    <p class="text-sm text-slate-500">Kelola daftar siswa yang mengikuti kuis. Data akan otomatis tersimpan di browser.</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="downloadStudentTemplate()" class="px-3 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-sm font-semibold transition flex items-center">
+                        <i class="fa-solid fa-file-excel mr-2"></i>Template Excel
+                    </button>
+                    <label class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition cursor-pointer flex items-center shadow">
+                        <i class="fa-solid fa-file-import mr-2"></i>Import Excel
+                        <input type="file" id="import-students-file" accept=".xlsx, .xls" class="hidden" onchange="importStudentsExcel(event)">
+                    </label>
+                    <button onclick="openAddStudentModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition flex items-center shadow">
+                        <i class="fa-solid fa-plus mr-2"></i>Tambah Peserta
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tabel Peserta -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs uppercase font-bold tracking-wider">
+                                <th class="p-4">ID / Kartu</th>
+                                <th class="p-4">Nama Siswa</th>
+                                <th class="p-4">Kelas / Kelompok</th>
+                                <th class="p-4 text-center">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="student-table-body" class="divide-y divide-slate-100 text-sm text-slate-700">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: MANAJEMEN SOAL KUIS -->
+        <section id="view-questions" class="tab-content hidden space-y-6">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <div>
+                    <h2 class="text-xl font-bold text-slate-800">Manajemen Soal Kuis</h2>
+                    <p class="text-sm text-slate-500">Buat, edit, atau import soal kuis. Soal tersimpan otomatis secara permanen di browser.</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="downloadQuestionTemplate()" class="px-3 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-sm font-semibold transition flex items-center">
+                        <i class="fa-solid fa-file-excel mr-2"></i>Template Excel
+                    </button>
+                    <label class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition cursor-pointer flex items-center shadow">
+                        <i class="fa-solid fa-file-import mr-2"></i>Import Excel
+                        <input type="file" id="import-questions-file" accept=".xlsx, .xls" class="hidden" onchange="importQuestionsExcel(event)">
+                    </label>
+                    <button onclick="openQuestionModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition flex items-center shadow">
+                        <i class="fa-solid fa-plus mr-2"></i>Tambah Soal
+                    </button>
+                </div>
+            </div>
+
+            <!-- List Soal -->
+            <div id="questions-list-container" class="space-y-4">
+                <!-- Populated via JS -->
+            </div>
+        </section>
+
+        <!-- TAB 4: GENERATOR KARTU QR -->
+        <section id="view-cards" class="tab-content hidden space-y-6">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4 no-print">
+                <div>
+                    <h2 class="text-xl font-bold text-slate-800">Cetak Kartu QR Peserta</h2>
+                    <p class="text-sm text-slate-500">Kartu QR berukuran besar dengan penanda indikator opsi A, B, C, D di setiap sisi.</p>
+                </div>
+                <button onclick="window.print()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition flex items-center shadow">
+                    <i class="fa-solid fa-print mr-2"></i>Cetak Semua Kartu
+                </button>
+            </div>
+
+            <!-- Printable Cards Grid -->
+            <div id="printableArea" class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- Kartu QR didesain besar untuk tiap siswa -->
+            </div>
+        </section>
+
+        <!-- TAB 5: HASIL & PAPAN SKOR -->
+        <section id="view-results" class="tab-content hidden space-y-6">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div>
+                    <h2 class="text-xl font-bold text-slate-800">Papan Skor & Hasil Akhir</h2>
+                    <p class="text-sm text-slate-500">Rekapitulasi total nilai dan urutan peringkat peserta kuis.</p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="triggerConfetti()" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold transition flex items-center shadow">
+                        <i class="fa-solid fa-award mr-2"></i>Rayakan Pemenang
+                    </button>
+                    <button onclick="exportResultsExcel()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold transition flex items-center shadow">
+                        <i class="fa-solid fa-file-export mr-2"></i>Export Hasil Excel
+                    </button>
+                </div>
+            </div>
+
+            <!-- Top 3 Podium Card -->
+            <div id="podium-container" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- Populated via JS -->
+            </div>
+
+            <!-- Tabel Peringkat Lengkap -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-4 border-b border-slate-200 font-bold text-slate-700">
+                    <i class="fa-solid fa-list-ol text-indigo-600 mr-2"></i>Peringkat Keseluruhan
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs uppercase font-bold tracking-wider">
+                                <th class="p-4 text-center">Rank</th>
+                                <th class="p-4">Nama Siswa</th>
+                                <th class="p-4">Kelas</th>
+                                <th class="p-4 text-center">Benar</th>
+                                <th class="p-4 text-center">Salah</th>
+                                <th class="p-4 text-right">Skor Akhir</th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-table-body" class="divide-y divide-slate-100 text-sm text-slate-700">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- MODAL: Tambah/Edit Peserta -->
+    <div id="student-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-white p-6 rounded-xl shadow-xl w-full max-w-md mx-4">
+            <h3 id="student-modal-title" class="text-lg font-bold text-slate-800 mb-4">Tambah Peserta</h3>
+            <form id="student-form" onsubmit="saveStudent(event)" class="space-y-4">
+                <input type="hidden" id="student-form-id">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Nomor ID Siswa (Unik)</label>
+                    <input type="number" id="student-form-num" required min="1" max="999" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Nama Lengkap Siswa</label>
+                    <input type="text" id="student-form-name" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Kelas / Kelompok</label>
+                    <input type="text" id="student-form-class" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div class="flex justify-end space-x-2 pt-2">
+                    <button type="button" onclick="closeStudentModal()" class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg font-semibold hover:bg-slate-300 transition">Batal</button>
+                    <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: Tambah/Edit Soal -->
+    <div id="question-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-white p-6 rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 id="question-modal-title" class="text-lg font-bold text-slate-800 mb-4">Tambah Soal Kuis</h3>
+            <form id="question-form" onsubmit="saveQuestion(event)" class="space-y-4">
+                <input type="hidden" id="question-form-id">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Pertanyaan / Soal</label>
+                    <textarea id="question-form-text" required rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Pilihan A</label>
+                        <input type="text" id="question-form-optA" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Pilihan B</label>
+                        <input type="text" id="question-form-optB" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Pilihan C</label>
+                        <input type="text" id="question-form-optC" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Pilihan D</label>
+                        <input type="text" id="question-form-optD" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Kunci Jawaban Benar</label>
+                    <select id="question-form-key" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
+                        <option value="A">Opsi A</option>
+                        <option value="B">Opsi B</option>
+                        <option value="C">Opsi C</option>
+                        <option value="D">Opsi D</option>
+                    </select>
+                </div>
+                <div class="flex justify-end space-x-2 pt-2">
+                    <button type="button" onclick="closeQuestionModal()" class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg font-semibold hover:bg-slate-300 transition">Batal</button>
+                    <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition">Simpan Soal</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // Initial Default Data
+        const defaultStudents = [
+            { id: 1, name: 'Ahmad Budi', class: '7-A' },
+            { id: 2, name: 'Citra Dewi', class: '7-A' },
+            { id: 3, name: 'Doni Pratama', class: '7-A' },
+            { id: 4, name: 'Eka Nur', class: '7-A' },
+            { id: 5, name: 'Fajar Kurnia', class: '7-A' }
+        ];
+
+        const defaultQuestions = [
+            { id: 1, text: 'Berapakah hasil dari 15 + 27?', A: '40', B: '42', C: '44', D: '45', key: 'B' },
+            { id: 2, text: 'Ibu kota negara Indonesia saat ini adalah...', A: 'Bandung', B: 'Surabaya', C: 'Jakarta', D: 'Medan', key: 'C' },
+            { id: 3, text: 'Planet terbesar dalam tata surya kita adalah...', A: 'Mars', B: 'Saturnus', C: 'Bumi', D: 'Yupiter', key: 'D' },
+            { id: 4, text: 'Proses tumbuhan hijau membuat makanan sendiri disebut...', A: 'Fotosintesis', B: 'Respirasi', C: 'Eksresi', D: 'Transpirasi', key: 'A' },
+            { id: 5, text: 'Rumus kimia air adalah...', A: 'CO2', B: 'H2O', C: 'O2', D: 'NaCl', key: 'B' }
+        ];
+
+        // Active State
+        let students = [];
+        let questions = [];
+        let quizAnswers = {};
+
+        let currentQuestionIndex = 0;
+        let isScanning = false;
+        let videoStream = null;
+        let audioCtx = null;
+
+        // --- LOCAL STORAGE PERSISTENCE LOGIC ---
+        function loadStorageData() {
+            try {
+                const savedStudents = localStorage.getItem('kuisqr_students');
+                const savedQuestions = localStorage.getItem('kuisqr_questions');
+                const savedAnswers = localStorage.getItem('kuisqr_answers');
+
+                students = savedStudents ? JSON.parse(savedStudents) : defaultStudents;
+                questions = savedQuestions ? JSON.parse(savedQuestions) : defaultQuestions;
+                quizAnswers = savedAnswers ? JSON.parse(savedAnswers) : {};
+            } catch (e) {
+                console.error("Gagal memuat dari storage", e);
+                students = defaultStudents;
+                questions = defaultQuestions;
+                quizAnswers = {};
+            }
+        }
+
+        function saveStorageData() {
+            try {
+                localStorage.setItem('kuisqr_students', JSON.stringify(students));
+                localStorage.setItem('kuisqr_questions', JSON.stringify(questions));
+                localStorage.setItem('kuisqr_answers', JSON.stringify(quizAnswers));
+            } catch (e) {
+                console.error("Gagal menyimpan ke storage", e);
+            }
+        }
+
+        function resetAllData() {
+            if (confirm("Apakah Anda yakin ingin mengembalikan semua data ke pengaturan awal (Reset)? Semua soal dan siswa yang Anda upload/tambah akan dihapus.")) {
+                students = [...defaultStudents];
+                questions = [...defaultQuestions];
+                quizAnswers = {};
+                saveStorageData();
+                currentQuestionIndex = 0;
+                renderCurrentQuestion();
+                renderQuestionsList();
+                renderStudentTable();
+                alert("Data berhasil di-reset ke bawaan!");
+            }
+        }
+
+        // --- AUDIO FEEDBACK ---
+        function playSound(type) {
+            try {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                if (type === 'scan') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+                    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.15);
+                } else if (type === 'success') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(523.25, audioCtx.currentTime);
+                    osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.1);
+                    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.3);
+                }
+            } catch (e) {
+                console.log('Audio error:', e);
+            }
+        }
+
+        // Navigation Tabs
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('bg-indigo-700', 'text-white');
+                btn.classList.add('hover:bg-indigo-500', 'text-indigo-100');
+            });
+
+            document.getElementById(`view-${tabId}`).classList.remove('hidden');
+            const activeNav = document.getElementById(`tab-${tabId}`);
+            if (activeNav) {
+                activeNav.classList.add('bg-indigo-700', 'text-white');
+                activeNav.classList.remove('hover:bg-indigo-500', 'text-indigo-100');
+            }
+
+            if (tabId !== 'quiz' && isScanning) {
+                stopCamera();
+            }
+
+            if (tabId === 'cards') {
+                renderQRCards();
+            } else if (tabId === 'results') {
+                renderResults();
+            } else if (tabId === 'students') {
+                renderStudentTable();
+            } else if (tabId === 'questions') {
+                renderQuestionsList();
+            }
+        }
+
+        // --- SECTION 1: QUIZ & SCANNER LOGIC ---
+
+        function renderCurrentQuestion() {
+            if (!questions || questions.length === 0) {
+                document.getElementById('question-number-badge').innerText = `Soal 0 / 0`;
+                document.getElementById('question-text').innerText = "Belum ada soal kuis. Silakan tambah atau import soal di menu Soal Kuis.";
+                document.getElementById('opt-A-text').innerText = "-";
+                document.getElementById('opt-B-text').innerText = "-";
+                document.getElementById('opt-C-text').innerText = "-";
+                document.getElementById('opt-D-text').innerText = "-";
+                updateAnswerCounters();
+                return;
+            }
+
+            if (currentQuestionIndex >= questions.length) {
+                currentQuestionIndex = 0;
+            }
+
+            const q = questions[currentQuestionIndex];
+            document.getElementById('question-number-badge').innerText = `Soal ${currentQuestionIndex + 1} / ${questions.length}`;
+            document.getElementById('question-text').innerText = q.text;
+            document.getElementById('opt-A-text').innerText = q.A;
+            document.getElementById('opt-B-text').innerText = q.B;
+            document.getElementById('opt-C-text').innerText = q.C;
+            document.getElementById('opt-D-text').innerText = q.D;
+
+            updateAnswerCounters();
+        }
+
+        function updateAnswerCounters() {
+            if (!questions || questions.length === 0) return;
+            const currentQ = questions[currentQuestionIndex];
+            if (!currentQ) return;
+            
+            const currentQAnswers = quizAnswers[currentQ.id] || {};
+            
+            const counts = { A: 0, B: 0, C: 0, D: 0 };
+            let totalScanned = 0;
+
+            const scannedListEl = document.getElementById('live-scanned-list');
+            scannedListEl.innerHTML = '';
+
+            Object.keys(currentQAnswers).forEach(studentId => {
+                const ans = currentQAnswers[studentId];
+                if (counts[ans] !== undefined) counts[ans]++;
+                totalScanned++;
+
+                const student = students.find(s => s.id == studentId);
+                const name = student ? student.name : `Siswa ID ${studentId}`;
+
+                const item = document.createElement('div');
+                item.className = 'py-2 flex justify-between items-center';
+                item.innerHTML = `
+                    <span class="font-medium text-slate-700">${name}</span>
+                    <span class="px-2 py-0.5 text-xs font-bold bg-indigo-100 text-indigo-700 rounded">${ans}</span>
+                `;
+                scannedListEl.appendChild(item);
+            });
+
+            document.getElementById('badge-count-A').innerText = counts.A;
+            document.getElementById('badge-count-B').innerText = counts.B;
+            document.getElementById('badge-count-C').innerText = counts.C;
+            document.getElementById('badge-count-D').innerText = counts.D;
+
+            document.getElementById('scanned-count-badge').innerHTML = `<i class="fa-solid fa-check-circle mr-1"></i>${totalScanned} Terjawab`;
+            document.getElementById('live-scan-ratio').innerText = `${totalScanned} / ${students.length} Peserta`;
+
+            if (totalScanned === 0) {
+                scannedListEl.innerHTML = `<p class="text-slate-400 text-xs text-center py-4 italic">Buka kamera dan arahkan ke kartu QR siswa untuk merekam jawaban.</p>`;
+            }
+        }
+
+        function nextQuestion() {
+            if (questions.length > 0 && currentQuestionIndex < questions.length - 1) {
+                currentQuestionIndex++;
+                renderCurrentQuestion();
+            }
+        }
+
+        function prevQuestion() {
+            if (questions.length > 0 && currentQuestionIndex > 0) {
+                currentQuestionIndex--;
+                renderCurrentQuestion();
+            }
+        }
+
+        function resetCurrentAnswers() {
+            if (questions.length === 0) return;
+            const currentQ = questions[currentQuestionIndex];
+            if (currentQ && quizAnswers[currentQ.id]) {
+                delete quizAnswers[currentQ.id];
+                saveStorageData();
+                updateAnswerCounters();
+            }
+        }
+
+        // --- CAMERA & JSQR ENGINE ---
+
+        async function toggleCamera() {
+            if (isScanning) {
+                stopCamera();
+            } else {
+                await startCamera();
+            }
+        }
+
+        async function startCamera() {
+            const video = document.getElementById('video');
+            try {
+                const constraints = {
+                    video: {
+                        facingMode: "environment",
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                };
+
+                videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = videoStream;
+                video.setAttribute("playsinline", true);
+                video.play();
+
+                isScanning = true;
+                document.getElementById('toggle-camera-btn').innerHTML = `<i class="fa-solid fa-stop mr-2"></i>Hentikan Kamera`;
+                document.getElementById('toggle-camera-btn').classList.replace('bg-indigo-600', 'bg-rose-600');
+                document.getElementById('toggle-camera-btn').classList.replace('hover:bg-indigo-700', 'hover:bg-rose-700');
+                
+                document.getElementById('camera-status-text').innerText = "Kamera Aktif";
+                document.getElementById('camera-status-text').classList.replace('text-slate-500', 'text-emerald-600');
+                document.getElementById('status-ping').classList.remove('hidden');
+                document.getElementById('status-dot').classList.replace('bg-slate-400', 'bg-emerald-500');
+
+                requestAnimationFrame(scanTick);
+            } catch (err) {
+                alert("Gagal mengakses kamera: " + err.message);
+            }
+        }
+
+        function stopCamera() {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
+            isScanning = false;
+            document.getElementById('toggle-camera-btn').innerHTML = `<i class="fa-solid fa-camera mr-2"></i>Mulai Pemindai`;
+            document.getElementById('toggle-camera-btn').classList.replace('bg-rose-600', 'bg-indigo-600');
+            document.getElementById('toggle-camera-btn').classList.replace('hover:bg-rose-700', 'hover:bg-indigo-700');
+
+            document.getElementById('camera-status-text').innerText = "Kamera Mati";
+            document.getElementById('camera-status-text').classList.replace('text-emerald-600', 'text-slate-500');
+            document.getElementById('status-ping').classList.add('hidden');
+            document.getElementById('status-dot').classList.replace('bg-emerald-500', 'bg-slate-400');
+        }
+
+        function scanTick() {
+            if (!isScanning) return;
+
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('overlay');
+            const ctx = canvas.getContext('2d');
+
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                canvas.height = video.videoHeight;
+                canvas.width = video.videoWidth;
+
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "dontInvert",
+                });
+
+                if (code) {
+                    drawOutline(ctx, code.location, "#10B981");
+
+                    const dx = code.location.topRightCorner.x - code.location.topLeftCorner.x;
+                    const dy = code.location.topRightCorner.y - code.location.topLeftCorner.y;
+                    let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                    if (angle < 0) angle += 360;
+
+                    let selectedOption = 'A';
+                    if (angle >= 45 && angle < 135) {
+                        selectedOption = 'B';
+                    } else if (angle >= 135 && angle < 225) {
+                        selectedOption = 'C';
+                    } else if (angle >= 225 && angle < 315) {
+                        selectedOption = 'D';
+                    } else {
+                        selectedOption = 'A';
+                    }
+
+                    let studentId = code.data.replace('STUDENT_', '').trim();
+                    const student = students.find(s => s.id == studentId);
+
+                    if (student) {
+                        drawLabel(ctx, code.location.topLeftCorner, `${student.name} [${selectedOption}]`);
+
+                        if (questions.length > 0) {
+                            const currentQ = questions[currentQuestionIndex];
+                            if (currentQ) {
+                                if (!quizAnswers[currentQ.id]) {
+                                    quizAnswers[currentQ.id] = {};
+                                }
+                                
+                                if (quizAnswers[currentQ.id][student.id] !== selectedOption) {
+                                    quizAnswers[currentQ.id][student.id] = selectedOption;
+                                    saveStorageData(); // Auto save
+                                    playSound('scan');
+                                    updateAnswerCounters();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            requestAnimationFrame(scanTick);
+        }
+
+        function drawOutline(ctx, location, color) {
+            ctx.beginPath();
+            ctx.moveTo(location.topLeftCorner.x, location.topLeftCorner.y);
+            ctx.lineTo(location.topRightCorner.x, location.topRightCorner.y);
+            ctx.lineTo(location.bottomRightCorner.x, location.bottomRightCorner.y);
+            ctx.lineTo(location.bottomLeftCorner.x, location.bottomLeftCorner.y);
+            ctx.lineTo(location.topLeftCorner.x, location.topLeftCorner.y);
+            ctx.lineWidth = 6;
+            ctx.strokeStyle = color;
+            ctx.stroke();
+        }
+
+        function drawLabel(ctx, point, text) {
+            ctx.font = "bold 20px sans-serif";
+            ctx.fillStyle = "#10B981";
+            ctx.fillRect(point.x, point.y - 35, ctx.measureText(text).width + 20, 32);
+            ctx.fillStyle = "#FFFFFF";
+            ctx.fillText(text, point.x + 10, point.y - 12);
+        }
+
+        // --- SECTION 2: QR CARDS GENERATOR ---
+
+        function renderQRCards() {
+            const container = document.getElementById('printableArea');
+            container.innerHTML = '';
+
+            if (students.length === 0) {
+                container.innerHTML = `<p class="col-span-2 text-center text-slate-500 py-10">Belum ada peserta kuis. Silakan tambah atau import peserta.</p>`;
+                return;
+            }
+
+            students.forEach(student => {
+                const card = document.createElement('div');
+                card.className = "bg-white p-6 border-4 border-slate-900 rounded-2xl flex flex-col items-center justify-between min-h-[420px] relative shadow-md page-break";
+                
+                card.innerHTML = `
+                    <div class="text-center w-full border-b-2 border-slate-200 pb-2">
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">KARTU JAWABAN KUIS</span>
+                        <h3 class="text-2xl font-black text-slate-900 leading-tight">${student.name}</h3>
+                        <p class="text-sm font-bold text-indigo-600">ID: ${student.id} | Kelas: ${student.class}</p>
+                    </div>
+
+                    <div class="relative w-full max-w-[280px] aspect-square my-4 flex items-center justify-center">
+                        <div class="absolute -top-6 left-1/2 -translate-x-1/2 text-2xl font-black bg-slate-900 text-white w-10 h-10 rounded-full flex items-center justify-center border-2 border-white shadow">A</div>
+                        <div class="absolute -left-6 top-1/2 -translate-y-1/2 text-2xl font-black bg-slate-900 text-white w-10 h-10 rounded-full flex items-center justify-center border-2 border-white shadow">B</div>
+                        <div class="absolute -bottom-6 left-1/2 -translate-x-1/2 text-2xl font-black bg-slate-900 text-white w-10 h-10 rounded-full flex items-center justify-center border-2 border-white shadow">C</div>
+                        <div class="absolute -right-6 top-1/2 -translate-y-1/2 text-2xl font-black bg-slate-900 text-white w-10 h-10 rounded-full flex items-center justify-center border-2 border-white shadow">D</div>
+
+                        <div id="qrcode-target-${student.id}" class="p-3 bg-white border-2 border-slate-300 rounded-xl"></div>
+                    </div>
+
+                    <div class="text-center text-xs text-slate-500 italic mt-2">
+                        *Pegang kartu dan putar posisi huruf jawaban yang dipilih ke posisi ATAS.
+                    </div>
+                `;
+
+                container.appendChild(card);
+
+                setTimeout(() => {
+                    new QRCode(document.getElementById(`qrcode-target-${student.id}`), {
+                        text: `STUDENT_${student.id}`,
+                        width: 180,
+                        height: 180,
+                        colorDark: "#000000",
+                        colorLight: "#ffffff",
+                        correctLevel: QRCode.CorrectLevel.H
+                    });
+                }, 50);
+            });
+        }
+
+        // --- SECTION 3: MANAJEMEN PESERTA ---
+
+        function renderStudentTable() {
+            const tbody = document.getElementById('student-table-body');
+            tbody.innerHTML = '';
+
+            if (students.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-slate-400">Belum ada peserta kuis.</td></tr>`;
+                return;
+            }
+
+            students.forEach(student => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 transition";
+                tr.innerHTML = `
+                    <td class="p-4 font-bold text-indigo-600">#${student.id}</td>
+                    <td class="p-4 font-semibold text-slate-800">${student.name}</td>
+                    <td class="p-4 text-slate-600">${student.class}</td>
+                    <td class="p-4 text-center space-x-2">
+                        <button onclick="editStudent(${student.id})" class="px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-700 rounded text-xs font-semibold transition">
+                            <i class="fa-solid fa-pen"></i> Edit
+                        </button>
+                        <button onclick="deleteStudent(${student.id})" class="px-2 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded text-xs font-semibold transition">
+                            <i class="fa-solid fa-trash"></i> Hapus
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function openAddStudentModal() {
+            document.getElementById('student-modal-title').innerText = "Tambah Peserta Kuis";
+            document.getElementById('student-form-id').value = "";
+            document.getElementById('student-form-num').value = students.length > 0 ? Math.max(...students.map(s => s.id)) + 1 : 1;
+            document.getElementById('student-form-name').value = "";
+            document.getElementById('student-form-class').value = "7-A";
+            document.getElementById('student-modal').classList.remove('hidden');
+        }
+
+        function closeStudentModal() {
+            document.getElementById('student-modal').classList.add('hidden');
+        }
+
+        function saveStudent(e) {
+            e.preventDefault();
+            const idVal = document.getElementById('student-form-id').value;
+            const numVal = parseInt(document.getElementById('student-form-num').value);
+            const nameVal = document.getElementById('student-form-name').value.trim();
+            const classVal = document.getElementById('student-form-class').value.trim();
+
+            if (idVal) {
+                const index = students.findIndex(s => s.id == idVal);
+                if (index !== -1) {
+                    students[index] = { id: numVal, name: nameVal, class: classVal };
+                }
+            } else {
+                if (students.some(s => s.id === numVal)) {
+                    alert("ID Siswa sudah digunakan. Gunakan ID lain.");
+                    return;
+                }
+                students.push({ id: numVal, name: nameVal, class: classVal });
+            }
+
+            saveStorageData(); // Persist
+            closeStudentModal();
+            renderStudentTable();
+        }
+
+        function editStudent(id) {
+            const student = students.find(s => s.id === id);
+            if (!student) return;
+            document.getElementById('student-modal-title').innerText = "Edit Peserta Kuis";
+            document.getElementById('student-form-id').value = student.id;
+            document.getElementById('student-form-num').value = student.id;
+            document.getElementById('student-form-name').value = student.name;
+            document.getElementById('student-form-class').value = student.class;
+            document.getElementById('student-modal').classList.remove('hidden');
+        }
+
+        function deleteStudent(id) {
+            if (confirm("Apakah Anda yakin ingin menghapus peserta ini?")) {
+                students = students.filter(s => s.id !== id);
+                saveStorageData(); // Persist
+                renderStudentTable();
+            }
+        }
+
+        function downloadStudentTemplate() {
+            const data = [
+                ["ID", "Nama Siswa", "Kelas"],
+                [1, "Ahmad Budi", "7-A"],
+                [2, "Citra Dewi", "7-A"]
+            ];
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Peserta");
+            XLSX.writeFile(wb, "Template_Peserta_KuisQR.xlsx");
+        }
+
+        function importStudentsExcel(e) {
+            const fileInput = e.target;
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    const data = new Uint8Array(evt.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const json = XLSX.utils.sheet_to_json(worksheet);
+
+                    if (json && json.length > 0) {
+                        const imported = json.map((row, idx) => {
+                            // Smart Key Normalizer
+                            const keys = Object.keys(row);
+                            const getKey = (name) => keys.find(k => k.trim().toLowerCase() === name.toLowerCase());
+
+                            const idKey = getKey("ID") || getKey("id");
+                            const nameKey = getKey("Nama Siswa") || getKey("Nama") || getKey("name");
+                            const classKey = getKey("Kelas") || getKey("class");
+
+                            return {
+                                id: idKey && row[idKey] ? parseInt(row[idKey]) : idx + 1,
+                                name: nameKey && row[nameKey] ? String(row[nameKey]).trim() : `Siswa ${idx + 1}`,
+                                class: classKey && row[classKey] ? String(row[classKey]).trim() : "Umum"
+                            };
+                        });
+
+                        students = imported;
+                        saveStorageData(); // Persist storage
+                        renderStudentTable();
+                        alert(`Berhasil mengimpor & menyimpan ${imported.length} peserta kuis!`);
+                    } else {
+                        alert("File Excel kosong atau format tidak sesuai.");
+                    }
+                } catch (err) {
+                    alert("Gagal membaca file Excel. Pastikan file berformat .xlsx / .xls");
+                } finally {
+                    fileInput.value = ''; // Reset input
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // --- SECTION 4: MANAJEMEN SOAL ---
+
+        function renderQuestionsList() {
+            const container = document.getElementById('questions-list-container');
+            container.innerHTML = '';
+
+            if (questions.length === 0) {
+                container.innerHTML = `<div class="p-8 bg-white rounded-xl text-center text-slate-400">Belum ada soal kuis. Silakan buat atau import dari Excel.</div>`;
+                return;
+            }
+
+            questions.forEach((q, idx) => {
+                const card = document.createElement('div');
+                card.className = "bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4";
+                card.innerHTML = `
+                    <div class="space-y-2 flex-1">
+                        <div class="flex items-center space-x-2">
+                            <span class="bg-indigo-100 text-indigo-700 font-bold text-xs px-2.5 py-1 rounded-md">Soal #${idx + 1}</span>
+                            <span class="bg-emerald-100 text-emerald-800 font-bold text-xs px-2.5 py-1 rounded-md">Kunci: ${q.key}</span>
+                        </div>
+                        <p class="font-bold text-slate-800 text-base">${q.text}</p>
+                        <div class="grid grid-cols-2 gap-2 text-xs text-slate-600">
+                            <div><span class="font-bold">A:</span> ${q.A}</div>
+                            <div><span class="font-bold">B:</span> ${q.B}</div>
+                            <div><span class="font-bold">C:</span> ${q.C}</div>
+                            <div><span class="font-bold">D:</span> ${q.D}</div>
+                        </div>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button onclick="editQuestion(${q.id})" class="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-700 rounded-lg text-xs font-semibold transition">
+                            <i class="fa-solid fa-pen mr-1"></i>Edit
+                        </button>
+                        <button onclick="deleteQuestion(${q.id})" class="px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-lg text-xs font-semibold transition">
+                            <i class="fa-solid fa-trash mr-1"></i>Hapus
+                        </button>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function openQuestionModal() {
+            document.getElementById('question-modal-title').innerText = "Tambah Soal Kuis";
+            document.getElementById('question-form-id').value = "";
+            document.getElementById('question-form-text').value = "";
+            document.getElementById('question-form-optA').value = "";
+            document.getElementById('question-form-optB').value = "";
+            document.getElementById('question-form-optC').value = "";
+            document.getElementById('question-form-optD').value = "";
+            document.getElementById('question-form-key').value = "A";
+            document.getElementById('question-modal').classList.remove('hidden');
+        }
+
+        function closeQuestionModal() {
+            document.getElementById('question-modal').classList.add('hidden');
+        }
+
+        function saveQuestion(e) {
+            e.preventDefault();
+            const idVal = document.getElementById('question-form-id').value;
+            const text = document.getElementById('question-form-text').value.trim();
+            const optA = document.getElementById('question-form-optA').value.trim();
+            const optB = document.getElementById('question-form-optB').value.trim();
+            const optC = document.getElementById('question-form-optC').value.trim();
+            const optD = document.getElementById('question-form-optD').value.trim();
+            const key = document.getElementById('question-form-key').value;
+
+            if (idVal) {
+                const index = questions.findIndex(q => q.id == idVal);
+                if (index !== -1) {
+                    questions[index] = { id: parseInt(idVal), text, A: optA, B: optB, C: optC, D: optD, key };
+                }
+            } else {
+                const newId = questions.length > 0 ? Math.max(...questions.map(q => q.id)) + 1 : 1;
+                questions.push({ id: newId, text, A: optA, B: optB, C: optC, D: optD, key });
+            }
+
+            saveStorageData(); // Persist storage
+            closeQuestionModal();
+            renderQuestionsList();
+            renderCurrentQuestion();
+        }
+
+        function editQuestion(id) {
+            const q = questions.find(q => q.id === id);
+            if (!q) return;
+            document.getElementById('question-modal-title').innerText = "Edit Soal Kuis";
+            document.getElementById('question-form-id').value = q.id;
+            document.getElementById('question-form-text').value = q.text;
+            document.getElementById('question-form-optA').value = q.A;
+            document.getElementById('question-form-optB').value = q.B;
+            document.getElementById('question-form-optC').value = q.C;
+            document.getElementById('question-form-optD').value = q.D;
+            document.getElementById('question-form-key').value = q.key;
+            document.getElementById('question-modal').classList.remove('hidden');
+        }
+
+        function deleteQuestion(id) {
+            if (confirm("Apakah Anda yakin ingin menghapus soal ini?")) {
+                questions = questions.filter(q => q.id !== id);
+                saveStorageData(); // Persist storage
+                renderQuestionsList();
+                if (currentQuestionIndex >= questions.length && questions.length > 0) {
+                    currentQuestionIndex = questions.length - 1;
+                }
+                renderCurrentQuestion();
+            }
+        }
+
+        function downloadQuestionTemplate() {
+            const data = [
+                ["Soal", "Pilihan A", "Pilihan B", "Pilihan C", "Pilihan D", "Kunci Jawaban"],
+                ["Berapakah hasil dari 5 x 5?", "10", "15", "20", "25", "D"],
+                ["Ibu kota Provinsi Jawa Barat adalah...", "Bandung", "Bogor", "Cirebon", "Bekasi", "A"]
+            ];
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Soal");
+            XLSX.writeFile(wb, "Template_Soal_KuisQR.xlsx");
+        }
+
+        function importQuestionsExcel(e) {
+            const fileInput = e.target;
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    const data = new Uint8Array(evt.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const json = XLSX.utils.sheet_to_json(worksheet);
+
+                    if (json && json.length > 0) {
+                        const imported = json.map((row, idx) => {
+                            // Smart Normalizer for Excel Header Names
+                            const keys = Object.keys(row);
+                            const getKey = (name) => keys.find(k => k.trim().toLowerCase() === name.toLowerCase());
+
+                            const textKey = getKey("Soal") || getKey("Pertanyaan") || getKey("text");
+                            const optAKey = getKey("Pilihan A") || getKey("A") || getKey("Opsi A");
+                            const optBKey = getKey("Pilihan B") || getKey("B") || getKey("Opsi B");
+                            const optCKey = getKey("Pilihan C") || getKey("C") || getKey("Opsi C");
+                            const optDKey = getKey("Pilihan D") || getKey("D") || getKey("Opsi D");
+                            const keyKey = getKey("Kunci Jawaban") || getKey("Kunci") || getKey("key");
+
+                            return {
+                                id: idx + 1,
+                                text: textKey && row[textKey] ? String(row[textKey]).trim() : `Soal #${idx + 1}`,
+                                A: optAKey && row[optAKey] ? String(row[optAKey]).trim() : "",
+                                B: optBKey && row[optBKey] ? String(row[optBKey]).trim() : "",
+                                C: optCKey && row[optCKey] ? String(row[optCKey]).trim() : "",
+                                D: optDKey && row[optDKey] ? String(row[optDKey]).trim() : "",
+                                key: keyKey && row[keyKey] ? String(row[keyKey]).trim().toUpperCase() : "A"
+                            };
+                        });
+
+                        questions = imported;
+                        currentQuestionIndex = 0;
+                        saveStorageData(); // Persist storage
+                        renderQuestionsList();
+                        renderCurrentQuestion();
+                        alert(`Berhasil mengimpor & menyimpan ${imported.length} soal kuis secara permanen!`);
+                    } else {
+                        alert("File Excel kosong atau format kolom tidak dikenali.");
+                    }
+                } catch (err) {
+                    alert("Gagal membaca file Excel. Pastikan format file sesuai.");
+                } finally {
+                    fileInput.value = ''; // Reset input agar bisa re-upload
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // --- SECTION 5: PAPAN SKOR & REKAP ---
+
+        function renderResults() {
+            const tbody = document.getElementById('results-table-body');
+            tbody.innerHTML = '';
+
+            const scores = calculateScores();
+
+            const podiumEl = document.getElementById('podium-container');
+            podiumEl.innerHTML = '';
+
+            const colors = ['bg-amber-100 border-amber-300 text-amber-800', 'bg-slate-100 border-slate-300 text-slate-800', 'bg-orange-100 border-orange-300 text-orange-800'];
+            const icons = ['fa-trophy text-amber-500', 'fa-medal text-slate-400', 'fa-award text-orange-500'];
+
+            for (let i = 0; i < Math.min(3, scores.length); i++) {
+                const item = scores[i];
+                const card = document.createElement('div');
+                card.className = `p-5 rounded-xl border-2 ${colors[i]} flex items-center space-x-4 shadow-sm`;
+                card.innerHTML = `
+                    <div class="text-3xl"><i class="fa-solid ${icons[i]}"></i></div>
+                    <div>
+                        <span class="text-xs font-bold uppercase tracking-wider">Juara ${i + 1}</span>
+                        <h4 class="font-black text-lg leading-snug">${item.student.name}</h4>
+                        <p class="text-xs opacity-80">Skor: <span class="font-bold text-sm">${item.score}</span> / 100 (${item.correct} Benar)</p>
+                    </div>
+                `;
+                podiumEl.appendChild(card);
+            }
+
+            scores.forEach((item, idx) => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 transition";
+                tr.innerHTML = `
+                    <td class="p-4 text-center font-black ${idx < 3 ? 'text-indigo-600' : 'text-slate-400'}">${idx + 1}</td>
+                    <td class="p-4 font-bold text-slate-800">${item.student.name}</td>
+                    <td class="p-4 text-slate-500">${item.student.class}</td>
+                    <td class="p-4 text-center text-emerald-600 font-bold">${item.correct}</td>
+                    <td class="p-4 text-center text-rose-500 font-bold">${item.wrong}</td>
+                    <td class="p-4 text-right font-black text-indigo-600 text-base">${item.score}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function calculateScores() {
+            const totalQuestions = questions.length;
+
+            return students.map(student => {
+                let correctCount = 0;
+                let wrongCount = 0;
+
+                questions.forEach(q => {
+                    const studentAns = quizAnswers[q.id] ? quizAnswers[q.id][student.id] : null;
+                    if (studentAns) {
+                        if (studentAns === q.key) {
+                            correctCount++;
+                        } else {
+                            wrongCount++;
+                        }
+                    }
+                });
+
+                const calculatedScore = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
+
+                return {
+                    student: student,
+                    correct: correctCount,
+                    wrong: wrongCount,
+                    score: calculatedScore
+                };
+            }).sort((a, b) => b.score - a.score || b.correct - a.correct);
+        }
+
+        function triggerConfetti() {
+            playSound('success');
+            confetti({
+                particleCount: 100,
+                spread: 70,
+                origin: { y: 0.6 }
+            });
+        }
+
+        function exportResultsExcel() {
+            const scores = calculateScores();
+            const data = scores.map((item, idx) => ({
+                "Peringkat": idx + 1,
+                "Nama Siswa": item.student.name,
+                "Kelas": item.student.class,
+                "Jumlah Benar": item.correct,
+                "Jumlah Salah": item.wrong,
+                "Skor Akhir": item.score
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Hasil Kuis");
+            XLSX.writeFile(wb, "Rekap_Nilai_KuisQR.xlsx");
+        }
+
+        // Init App on Page Load
+        window.onload = function() {
+            loadStorageData();
+            renderCurrentQuestion();
+        };
+    </script>
+</body>
+</html>
