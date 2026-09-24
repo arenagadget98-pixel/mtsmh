@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal Cek Nilai Siswa - Google Sheets Integration</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Font & Custom Styles -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            800: '#1e40af',
+                            900: '#1e3a8a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            body { background: white !important; color: black !important; }
+            .card-shadow { box-shadow: none !important; border: 1px solid #e5e7eb !important; }
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px);
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen font-sans antialiased selection:bg-brand-500 selection:text-white">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, Component } = React;
+
+        // Error Boundary Component to prevent Blank Screen on unhandled runtime errors
+        class ErrorBoundary extends Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null };
+            }
+            static getDerivedStateFromError(error) {
+                return { hasError: true, error };
+            }
+            componentDidCatch(error, errorInfo) {
+                console.error("React Error Boundary captured an error:", error, errorInfo);
+            }
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+                            <div className="bg-white p-6 rounded-3xl shadow-xl max-w-md w-full border border-rose-200 text-center">
+                                <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-4 font-bold text-xl">!</div>
+                                <h2 className="text-lg font-bold text-slate-800 mb-2">Terjadi Kesalahan Tampilan</h2>
+                                <p className="text-xs text-slate-600 mb-4">{this.state.error?.toString()}</p>
+                                <button 
+                                    onClick={() => window.location.reload()} 
+                                    className="px-4 py-2.5 bg-brand-600 text-white rounded-xl text-xs font-semibold hover:bg-brand-700 transition"
+                                >
+                                    Muat Ulang
+                                </button>
+                            </div>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
+        // SVG Icon Components
+        const IconGraduation = () => (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 14l9-5-9-5-9 5 9 5z"></path>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0112 20.055a11.952 11.952 0 01-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"></path>
+            </svg>
+        );
+
+        const IconSearch = () => (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+            </svg>
+        );
+
+        const IconDatabase = () => (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
+            </svg>
+        );
+
+        const IconUserCheck = () => (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+            </svg>
+        );
+
+        const IconArrowRight = () => (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+            </svg>
+        );
+
+        const IconArrowLeft = () => (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+            </svg>
+        );
+
+        const IconPrinter = () => (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path>
+            </svg>
+        );
+
+        const IconAlertCircle = () => (
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+        );
+
+        const IconCheckCircle = () => (
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+        );
+
+        const IconSheet = () => (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+        );
+
+        const IconClose = () => (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+        );
+
+        const IconUsers = () => (
+            <svg className="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+            </svg>
+        );
+
+        // =========================================================================
+        // MASUKKAN LINK SPREADSHEET DISINI:
+        // Tempelkan URL Google Sheet Anda pada variabel SPREADSHEET_URL di bawah ini.
+        // Contoh: const SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1xxxxxx/edit";
+        // =========================================================================
+        const SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRNXBwTl49kyGf4cQaCZDbMXUJ6Jmgecrxp3--dk8IEsv0Mn3ByXoOlOtvFnXeBXgTrwTosEUjPuWKy/pub?output=csv"; // <-- MASUKKAN LINK SPREADSHEET DISINI
+
+        const MOCK_STUDENTS = [
+            {
+                nisn: "1234567890",
+                nama: "Ahmad Rizky Pratama",
+                kelas: "XII IPA 1",
+                tahun_ajaran: "2025/2026",
+                semester: "Ganjil",
+                nilai: [
+                    { mata_pelajaran: "Pendidikan Agama & Budi Pekerti", kkm: 75, nilai: 88 },
+                    { mata_pelajaran: "Pancasila & Kewarganegaraan", kkm: 75, nilai: 85 },
+                    { mata_pelajaran: "Bahasa Indonesia", kkm: 78, nilai: 92 },
+                    { mata_pelajaran: "Matematika Peminatan", kkm: 70, nilai: 95 },
+                    { mata_pelajaran: "Fisika", kkm: 72, nilai: 89 },
+                    { mata_pelajaran: "Kimia", kkm: 70, nilai: 91 },
+                    { mata_pelajaran: "Biologi", kkm: 75, nilai: 87 },
+                    { mata_pelajaran: "Bahasa Inggris", kkm: 75, nilai: 90 }
+                ]
+            },
+            {
+                nisn: "0012345678",
+                nama: "Siti Nurhaliza",
+                kelas: "XII IPA 1",
+                tahun_ajaran: "2025/2026",
+                semester: "Ganjil",
+                nilai: [
+                    { mata_pelajaran: "Pendidikan Agama & Budi Pekerti", kkm: 75, nilai: 94 },
+                    { mata_pelajaran: "Pancasila & Kewarganegaraan", kkm: 75, nilai: 92 },
+                    { mata_pelajaran: "Bahasa Indonesia", kkm: 78, nilai: 95 },
+                    { mata_pelajaran: "Matematika Peminatan", kkm: 70, nilai: 98 },
+                    { mata_pelajaran: "Fisika", kkm: 72, nilai: 94 },
+                    { mata_pelajaran: "Kimia", kkm: 70, nilai: 96 },
+                    { mata_pelajaran: "Biologi", kkm: 75, nilai: 93 },
+                    { mata_pelajaran: "Bahasa Inggris", kkm: 75, nilai: 95 }
+                ]
+            },
+            {
+                nisn: "0098765432",
+                nama: "Budi Santoso",
+                kelas: "XII IPA 1",
+                tahun_ajaran: "2025/2026",
+                semester: "Ganjil",
+                nilai: [
+                    { mata_pelajaran: "Pendidikan Agama & Budi Pekerti", kkm: 75, nilai: 78 },
+                    { mata_pelajaran: "Pancasila & Kewarganegaraan", kkm: 75, nilai: 80 },
+                    { mata_pelajaran: "Bahasa Indonesia", kkm: 78, nilai: 82 },
+                    { mata_pelajaran: "Matematika Peminatan", kkm: 70, nilai: 75 },
+                    { mata_pelajaran: "Fisika", kkm: 72, nilai: 70 },
+                    { mata_pelajaran: "Kimia", kkm: 70, nilai: 74 },
+                    { mata_pelajaran: "Biologi", kkm: 75, nilai: 80 },
+                    { mata_pelajaran: "Bahasa Inggris", kkm: 75, nilai: 81 }
+                ]
+            },
+            {
+                nisn: "0055544433",
+                nama: "Dewi Lestari",
+                kelas: "XII IPA 2",
+                tahun_ajaran: "2025/2026",
+                semester: "Ganjil",
+                nilai: [
+                    { mata_pelajaran: "Pendidikan Agama & Budi Pekerti", kkm: 75, nilai: 85 },
+                    { mata_pelajaran: "Pancasila & Kewarganegaraan", kkm: 75, nilai: 88 },
+                    { mata_pelajaran: "Bahasa Indonesia", kkm: 78, nilai: 90 },
+                    { mata_pelajaran: "Matematika Peminatan", kkm: 70, nilai: 80 },
+                    { mata_pelajaran: "Fisika", kkm: 72, nilai: 82 },
+                    { mata_pelajaran: "Kimia", kkm: 70, nilai: 85 },
+                    { mata_pelajaran: "Biologi", kkm: 75, nilai: 88 },
+                    { mata_pelajaran: "Bahasa Inggris", kkm: 75, nilai: 86 }
+                ]
+            }
+        ];
+
+        function convertToCsvUrl(inputUrl) {
+            if (!inputUrl) return '';
+            let url = inputUrl.trim();
+
+            if (url.includes('output=csv') || url.includes('out:csv')) {
+                return url;
+            }
+
+            if (url.includes('/pubhtml') || url.includes('/pub')) {
+                url = url.replace(/\/pubhtml.*$/, '/pub?output=csv');
+                if (!url.includes('output=csv')) {
+                    url += (url.includes('?') ? '&' : '?') + 'output=csv';
+                }
+                return url;
+            }
+
+            const idMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+            if (idMatch && idMatch[1]) {
+                const sheetId = idMatch[1];
+                let gid = '0';
+                const gidMatch = url.match(/[#&?]gid=([0-9]+)/);
+                if (gidMatch && gidMatch[1]) {
+                    gid = gidMatch[1];
+                }
+                return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}`;
+            }
+
+            return url;
+        }
+
+        function parseCSVLine(text) {
+            let p = '', c = '', r = [];
+            let q = false;
+            for (let i = 0; i < text.length; i++) {
+                c = text[i];
+                if (c === '"') {
+                    q = !q;
+                } else if (c === ',' && !q) {
+                    r.push(p.trim().replace(/^"(.*)"$/, '$1'));
+                    p = '';
+                } else {
+                    p += c;
+                }
+            }
+            r.push(p.trim().replace(/^"(.*)"$/, '$1'));
+            return r;
+        }
+
+        // Parsing Google Spreadsheet tanpa input manual KKM di web
+        function parseGoogleSheetCSV(csvText) {
+            if (!csvText || typeof csvText !== 'string') return [];
+            const lines = csvText.split(/\r\n|\n/).filter(line => line.trim() !== '');
+            if (lines.length < 2) return [];
+
+            const originalHeaders = parseCSVLine(lines[0]).map(h => h.trim());
+            const headers = originalHeaders.map(h => h.toLowerCase().replace(/[\s_]+/g, '_'));
+            const data = [];
+
+            const knownMetadata = [
+                'nisn', 'nis', 'no_induk', 
+                'nama', 'nama_siswa', 'nama_lengkap', 'siswa',
+                'kelas', 'rombel', 
+                'tahun', 'tahun_ajaran', 'thn_ajaran',
+                'semester', 'smt',
+                'kkm', 'kkm_sekolah', 'kkm_standar'
+            ];
+
+            for (let i = 1; i < lines.length; i++) {
+                const values = parseCSVLine(lines[i]);
+                if (values.length < 2) continue;
+
+                const rowObj = {};
+                headers.forEach((h, idx) => {
+                    rowObj[h] = values[idx] || '';
+                });
+
+                const nisn = rowObj.nisn || rowObj.nis || rowObj.no_induk || '';
+                if (!nisn) continue; 
+
+                // Ambil KKM dari kolom 'kkm' atau 'kkm_sekolah' jika ada di spreadsheet, default ke 75 jika sama sekali tidak ada di spreadsheet
+                const rowKkm = parseInt(rowObj.kkm || rowObj.kkm_sekolah || rowObj.kkm_standar) || 75;
+
+                const student = {
+                    nisn: String(nisn).trim(),
+                    nama: rowObj.nama || rowObj.nama_siswa || rowObj.nama_lengkap || rowObj.siswa || 'Siswa',
+                    kelas: rowObj.kelas || rowObj.rombel || 'Umum',
+                    tahun_ajaran: rowObj.tahun_ajaran || rowObj.tahun || rowObj.thn_ajaran || '2025/2026',
+                    semester: rowObj.semester || rowObj.smt || 'Ganjil',
+                    nilai: []
+                };
+
+                headers.forEach((hKey, idx) => {
+                    if (!knownMetadata.includes(hKey) && values[idx] !== undefined && !hKey.startsWith('kkm_')) {
+                        const rawVal = values[idx].trim();
+                        const valNum = parseInt(rawVal);
+
+                        if (!isNaN(valNum) && valNum >= 0) {
+                            let subjectName = originalHeaders[idx] || hKey.toUpperCase().replace(/_/g, ' ');
+                            subjectName = subjectName.replace(/^(nilai_|mapel_|nilai)/i, '').trim();
+
+                            // Mendukung kolom KKM per mapel di sheet (contoh: KKM_Matematika)
+                            const subjectKkmKey = `kkm_${hKey}`;
+                            const subjectKkmVal = rowObj[subjectKkmKey] ? parseInt(rowObj[subjectKkmKey]) : null;
+
+                            student.nilai.push({
+                                mata_pelajaran: subjectName,
+                                kkm: subjectKkmVal || rowKkm,
+                                nilai: valNum
+                            });
+                        }
+                    }
+                });
+
+                data.push(student);
+            }
+
+            return data;
+        }
+
+        function MainApp() {
+            const [nisnInput, setNisnInput] = useState('');
+            const [currentStudent, setCurrentStudent] = useState(null);
+            const [isLoading, setIsLoading] = useState(false);
+            const [isSyncing, setIsSyncing] = useState(false);
+            const [lastSyncedTime, setLastSyncedTime] = useState('');
+            const [autoSyncEnabled, setAutoSyncEnabled] = useState(true);
+            const [errorMessage, setErrorMessage] = useState('');
+            const [dataStudents, setDataStudents] = useState(MOCK_STUDENTS);
+            const [isUsingMock, setIsUsingMock] = useState(!SPREADSHEET_URL);
+
+            const fetchSheetData = async (isSilent = false) => {
+                if (!SPREADSHEET_URL || !SPREADSHEET_URL.trim()) {
+                    setDataStudents(MOCK_STUDENTS);
+                    setIsUsingMock(true);
+                    return;
+                }
+
+                if (!isSilent) setIsLoading(true);
+                setIsSyncing(true);
+                if (!isSilent) setErrorMessage('');
+
+                // Tambahkan parameter timestamp agar Google Sheet selalu mengirim data terbaru (bypass cache browser)
+                const baseCsvUrl = convertToCsvUrl(SPREADSHEET_URL);
+                const csvUrl = baseCsvUrl + (baseCsvUrl.includes('?') ? '&' : '?') + `_t=${Date.now()}`;
+
+                try {
+                    const response = await fetch(csvUrl, { cache: "no-store" });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP Status ${response.status}: Tidak dapat mengakses link spreadsheet.`);
+                    }
+                    
+                    const text = await response.text();
+
+                    if (text.includes('<!DOCTYPE html>') || text.includes('<html')) {
+                        throw new Error("Tautan Google Sheet belum dibuka ke publik. Ubah akses file menjadi 'Siapa saja yang memiliki link' (Anyone with link).");
+                    }
+
+                    const parsedData = parseGoogleSheetCSV(text);
+
+                    if (!parsedData || parsedData.length === 0) {
+                        throw new Error("Data tidak terdeteksi. Pastikan baris pertama spreadsheet memiliki kolom 'NISN' dan 'NAMA'.");
+                    }
+
+                    setDataStudents(parsedData);
+                    setIsUsingMock(false);
+                    const nowStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    setLastSyncedTime(nowStr);
+                } catch (err) {
+                    console.error("Fetch Sheet Error:", err);
+                    if (!isSilent) {
+                        setErrorMessage(err.message || "Gagal mengambil data dari Google Spreadsheet. Periksa koneksi atau tautan Anda.");
+                        setDataStudents(MOCK_STUDENTS);
+                        setIsUsingMock(true);
+                    }
+                } finally {
+                    if (!isSilent) setIsLoading(false);
+                    setIsSyncing(false);
+                }
+            };
+
+            // Initial Load
+            useEffect(() => {
+                if (SPREADSHEET_URL) {
+                    fetchSheetData();
+                }
+            }, []);
+
+            // Interval Sinkronisasi Otomatis setiap 10 detik
+            useEffect(() => {
+                if (!SPREADSHEET_URL || isUsingMock || !autoSyncEnabled) return;
+
+                const timer = setInterval(() => {
+                    fetchSheetData(true);
+                }, 10000);
+
+                return () => clearInterval(timer);
+            }, [isUsingMock, autoSyncEnabled]);
+
+            // Selalu perbarui tampilan siswa aktif jika ada perubahan data pada spreadsheet
+            useEffect(() => {
+                if (currentStudent) {
+                    const updated = dataStudents.find(
+                        s => String(s.nisn).trim().toLowerCase() === String(currentStudent.nisn).trim().toLowerCase()
+                    );
+                    if (updated && JSON.stringify(updated) !== JSON.stringify(currentStudent)) {
+                        setCurrentStudent(updated);
+                    }
+                }
+            }, [dataStudents]);
+
+            const handleSearch = (e) => {
+                e.preventDefault();
+                if (!nisnInput.trim()) {
+                    setErrorMessage('Silakan masukkan NISN terlebih dahulu.');
+                    return;
+                }
+                setErrorMessage('');
+                const found = dataStudents.find(
+                    s => String(s.nisn).trim().toLowerCase() === String(nisnInput).trim().toLowerCase()
+                );
+                if (found) {
+                    setCurrentStudent(found);
+                } else {
+                    setErrorMessage(`Siswa dengan NISN "${nisnInput}" tidak ditemukan dalam database.`);
+                }
+            };
+
+            // Kalkulasi statistik Khusus berdasarkan seluruh siswa di KELAS YANG SAMA (bukan total seluruh siswa)
+            const classStats = useMemo(() => {
+                if (!currentStudent || !dataStudents || dataStudents.length === 0) {
+                    return null;
+                }
+
+                // Filter HANYA siswa yang berada di KELAS/ROMBEL yang sama
+                const sameClassStudents = dataStudents.filter(
+                    s => String(s.kelas).trim().toLowerCase() === String(currentStudent.kelas).trim().toLowerCase()
+                );
+
+                const totalStudentsInClass = sameClassStudents.length;
+
+                // Hitung total nilai per siswa di kelas ini untuk menghitung Ranking Kelas
+                const classStudentSummaries = sameClassStudents.map(s => {
+                    const studentSum = (s.nilai || []).reduce((acc, curr) => acc + curr.nilai, 0);
+                    return {
+                        nisn: s.nisn,
+                        totalScore: studentSum
+                    };
+                });
+
+                // Urutkan berdasarkan Total Score tertinggi untuk menghitung Ranking Kelas
+                classStudentSummaries.sort((a, b) => b.totalScore - a.totalScore);
+
+                const studentRankInClass = classStudentSummaries.findIndex(
+                    s => String(s.nisn).trim() === String(currentStudent.nisn).trim()
+                ) + 1;
+
+                // Nilai Siswa Saat Ini
+                const currentStudentCount = currentStudent.nilai ? currentStudent.nilai.length : 0;
+                const currentStudentSum = currentStudent.nilai ? currentStudent.nilai.reduce((acc, curr) => acc + curr.nilai, 0) : 0;
+                const currentStudentAvg = currentStudentCount > 0 ? (currentStudentSum / currentStudentCount) : 0;
+                const allPassed = currentStudent.nilai ? currentStudent.nilai.every(item => item.nilai >= item.kkm) : false;
+
+                return {
+                    totalClassStudents: totalStudentsInClass,
+                    rankInClass: studentRankInClass > 0 ? `${studentRankInClass} dari ${totalStudentsInClass}` : '-',
+                    studentTotal: currentStudentSum,
+                    studentAvg: currentStudentAvg.toFixed(1),
+                    status: allPassed ? 'LULUS / TUNTAS' : 'MEMERLUKAN REMIDIAL'
+                };
+            }, [currentStudent, dataStudents]);
+
+            // Perhitungan Predikat Berdasarkan KKM masing-masing mata pelajaran
+            const getPredicate = (score, kkm) => {
+                const kkmNum = Number(kkm) || 75;
+                const interval = (100 - kkmNum) / 3;
+                const limitC = kkmNum + interval;       // Batas C
+                const limitB = kkmNum + (interval * 2); // Batas B
+
+                if (score < kkmNum) {
+                    return { label: 'D (Kurang)', color: 'text-rose-700 bg-rose-100/70 border-rose-200' };
+                } else if (score < limitC) {
+                    return { label: 'C (Cukup)', color: 'text-amber-700 bg-amber-100/70 border-amber-200' };
+                } else if (score < limitB) {
+                    return { label: 'B (Baik)', color: 'text-blue-700 bg-blue-100/70 border-blue-200' };
+                } else {
+                    return { label: 'A (Sangat Baik)', color: 'text-emerald-700 bg-emerald-100/70 border-emerald-200' };
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col justify-between">
+                    {/* Header Bar */}
+                    <header className="bg-gradient-to-r from-brand-900 via-brand-800 to-indigo-900 text-white shadow-md no-print">
+                        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
+                            <div className="flex items-center space-x-3">
+                                <div className="p-2 bg-white/10 rounded-xl backdrop-blur-md">
+                                    <IconGraduation />
+                                </div>
+                                <div>
+                                    <h1 className="font-extrabold text-lg sm:text-xl leading-tight tracking-wide">MTs Miftahul Huda Kedokanbunder</h1>
+                                    <p className="text-xs text-brand-100/90 font-medium">Portal Laporan Hasil Belajar Siswa</p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center space-x-2 text-xs sm:text-sm bg-white/10 px-3.5 py-2 rounded-xl border border-white/20 font-medium">
+                                <IconDatabase />
+                                <span className="hidden sm:inline">{SPREADSHEET_URL ? 'Database Terhubung' : 'Mode Demo'}</span>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Main Container */}
+                    <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8">
+                        
+                        {/* Status Bar Indicator */}
+                        <div className="no-print mb-6">
+                            {isUsingMock ? (
+                                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                                    <div className="flex items-center space-x-2">
+                                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0"></span>
+                                        <span>Mode Demo (Data Contoh). Masukkan URL Google Sheet di dalam file HTML pada variabel <strong>SPREADSHEET_URL</strong> untuk mengaktifkan data asli.</span>
+                                    </div>
+                                    <span className="font-mono bg-amber-100 px-2.5 py-1 rounded text-[11px] text-amber-900 border border-amber-300 shrink-0">
+                                        const SPREADSHEET_URL = "LINK_SPREADSHEET_DISINI";
+                                    </span>
+                                </div>
+                            ) : (
+                                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex items-center space-x-2">
+                                        <span className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-amber-500 animate-ping' : 'bg-emerald-500 animate-pulse'}`}></span>
+                                        <span>
+                                            Database Google Sheet: <strong>{dataStudents.length} Data Siswa Terbaca</strong>
+                                            {lastSyncedTime && <span className="text-emerald-700 ml-1.5 font-medium">(Terakhir Sinkron: {lastSyncedTime})</span>}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center space-x-3 shrink-0">
+                                        <button
+                                            onClick={() => setAutoSyncEnabled(!autoSyncEnabled)}
+                                            className={`px-2.5 py-1 rounded-lg font-semibold text-[11px] border transition cursor-pointer ${
+                                                autoSyncEnabled 
+                                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200' 
+                                                    : 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200'
+                                            }`}
+                                            title="Matikan/Aktifkan Sinkronisasi Otomatis"
+                                        >
+                                            {autoSyncEnabled ? '⚡ Auto-Sync Active (10s)' : '⏸️ Auto-Sync Jeda'}
+                                        </button>
+
+                                        <button
+                                            onClick={() => fetchSheetData(false)}
+                                            disabled={isSyncing}
+                                            className="font-semibold text-emerald-800 hover:text-emerald-900 underline flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+                                        >
+                                            <svg className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                            </svg>
+                                            <span>{isSyncing ? 'Memperbarui...' : 'Sinkron Sekarang'}</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Search Section */}
+                        {!currentStudent && (
+                            <div className="max-w-2xl mx-auto my-6">
+                                <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-6 sm:p-10 text-center glass-panel">
+                                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-50 text-brand-600 mb-6 shadow-inner">
+                                        <IconSearch />
+                                    </div>
+                                    <h2 className="text-2xl font-bold text-slate-800 mb-2">Cek Nilai Hasil Belajar</h2>
+                                    <p className="text-slate-500 text-sm mb-6 max-w-md mx-auto">
+                                        Masukkan Nomor Induk Siswa Nasional (NISN) Anda untuk melihat hasil nilai dan capaian semester.
+                                    </p>
+
+                                    <form onSubmit={handleSearch} className="space-y-4">
+                                        <div className="relative">
+                                            <div className="absolute left-4 top-3.5 text-slate-400">
+                                                <IconUserCheck />
+                                            </div>
+                                            <input
+                                                type="text"
+                                                value={nisnInput}
+                                                onChange={(e) => setNisnInput(e.target.value)}
+                                                placeholder="Masukkan NISN (Contoh: 1234567890)"
+                                                className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition font-medium text-slate-800 text-base outline-none"
+                                            />
+                                        </div>
+
+                                        <button
+                                            type="submit"
+                                            disabled={isLoading}
+                                            className="w-full bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white font-semibold py-3.5 px-6 rounded-xl shadow-lg shadow-brand-500/25 transition flex items-center justify-center space-x-2 disabled:opacity-70 cursor-pointer"
+                                        >
+                                            {isLoading ? (
+                                                <span className="flex items-center space-x-2">
+                                                    <svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24" fill="none">
+                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                    </svg>
+                                                    <span>Memproses Data...</span>
+                                                </span>
+                                            ) : (
+                                                <>
+                                                    <span>Lihat Rapor Hasil Belajar</span>
+                                                    <IconArrowRight />
+                                                </>
+                                            )}
+                                        </button>
+                                    </form>
+
+                                    {/* Error Banner */}
+                                    {errorMessage && (
+                                        <div className="mt-6 p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm flex items-start space-x-3 text-left">
+                                            <IconAlertCircle />
+                                            <div>{errorMessage}</div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Student Grades Report View */}
+                        {currentStudent && classStats && (
+                            <div className="space-y-6">
+                                {/* Navigation Toolbar */}
+                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 no-print">
+                                    <button
+                                        onClick={() => setCurrentStudent(null)}
+                                        className="flex items-center space-x-2 text-sm font-semibold text-slate-600 hover:text-brand-600 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-sm transition cursor-pointer"
+                                    >
+                                        <IconArrowLeft />
+                                        <span>Cari NISN Lain</span>
+                                    </button>
+
+                                    <div className="flex items-center space-x-3 w-full sm:w-auto">
+                                        <button
+                                            onClick={() => window.print()}
+                                            className="flex-1 sm:flex-initial flex items-center justify-center space-x-2 text-sm font-semibold bg-slate-800 hover:bg-slate-900 text-white px-5 py-2.5 rounded-xl shadow transition cursor-pointer"
+                                        >
+                                            <IconPrinter />
+                                            <span>Cetak / Simpan PDF</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Printable Report Sheet */}
+                                <div className="bg-white rounded-3xl shadow-xl border border-slate-200/80 p-6 sm:p-10 card-shadow">
+                                    {/* Document Header */}
+                                    <div className="border-b-2 border-slate-800 pb-6 mb-6">
+                                        <div className="flex flex-col sm:flex-row justify-between items-center text-center sm:text-left gap-4">
+                                            <div>
+                                                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 uppercase tracking-wide">
+                                                    LAPORAN HASIL BELAJAR SISWA
+                                                </h2>
+                                                <p className="text-slate-600 text-sm font-semibold">MTs Miftahul Huda Kedokanbunder</p>
+                                            </div>
+                                            <div className="text-center sm:text-right">
+                                                <span className="inline-block px-3.5 py-1 bg-brand-50 text-brand-700 font-bold text-xs rounded-full border border-brand-200 mb-1">
+                                                    Semester {currentStudent.semester}
+                                                </span>
+                                                <p className="text-xs text-slate-500 font-medium">Tahun Ajaran {currentStudent.tahun_ajaran}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Student Info Card */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-200/80 mb-6 text-sm">
+                                        <div>
+                                            <p className="text-slate-400 text-xs uppercase font-bold tracking-wider">Nama Siswa</p>
+                                            <p className="font-bold text-slate-800 text-base">{currentStudent.nama}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-slate-400 text-xs uppercase font-bold tracking-wider">NISN</p>
+                                            <p className="font-mono font-bold text-slate-800">{currentStudent.nisn}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-slate-400 text-xs uppercase font-bold tracking-wider">Kelas / Rombel</p>
+                                            <p className="font-bold text-slate-800">{currentStudent.kelas}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-slate-400 text-xs uppercase font-bold tracking-wider">Peringkat Kelas</p>
+                                            <p className="font-bold text-brand-600">{classStats.rankInClass}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Academic Overview Widgets */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 no-print">
+                                        <div className="bg-blue-50/70 border border-blue-100 p-4 rounded-2xl text-center">
+                                            <p className="text-xs text-blue-600 font-semibold mb-1">Rata-Rata Nilai</p>
+                                            <p className="text-2xl font-black text-blue-800">{classStats.studentAvg}</p>
+                                        </div>
+
+                                        <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-2xl text-center">
+                                            <p className="text-xs text-slate-500 font-semibold mb-1">Total Nilai</p>
+                                            <p className="text-2xl font-black text-slate-800">{classStats.studentTotal}</p>
+                                        </div>
+
+                                        <div className="bg-emerald-50/70 border border-emerald-100 p-4 rounded-2xl text-center">
+                                            <p className="text-xs text-emerald-600 font-semibold mb-1">Status Ketuntasan</p>
+                                            <p className="text-xs font-black text-emerald-700 mt-2 uppercase">{classStats.status}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Subject Grade Table */}
+                                    <div className="overflow-x-auto mb-6 rounded-xl border border-slate-200">
+                                        <table className="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr className="bg-slate-100 text-slate-700 text-xs uppercase font-extrabold tracking-wider border-b border-slate-200">
+                                                    <th className="p-3.5 text-center w-12 border-r border-slate-200">No</th>
+                                                    <th className="p-3.5 border-r border-slate-200">Mata Pelajaran</th>
+                                                    <th className="p-3.5 text-center w-20 border-r border-slate-200">KKM (Sheet)</th>
+                                                    <th className="p-3.5 text-center w-24 border-r border-slate-200">Nilai</th>
+                                                    <th className="p-3.5 text-center w-36">Predikat</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="text-sm divide-y divide-slate-200">
+                                                {currentStudent.nilai.map((item, index) => {
+                                                    const pred = getPredicate(item.nilai, item.kkm);
+                                                    return (
+                                                        <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                                                            <td className="p-3 text-center font-medium text-slate-400 border-r border-slate-200">{index + 1}</td>
+                                                            <td className="p-3 font-semibold text-slate-800 border-r border-slate-200">{item.mata_pelajaran}</td>
+                                                            <td className="p-3 text-center font-mono font-semibold text-slate-600 border-r border-slate-200">{item.kkm}</td>
+                                                            <td className={`p-3 text-center font-bold border-r border-slate-200 ${item.nilai >= item.kkm ? 'text-slate-800' : 'text-rose-600 bg-rose-50'}`}>
+                                                                {item.nilai}
+                                                            </td>
+                                                            <td className="p-3 text-center">
+                                                                <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-bold border ${pred.color}`}>
+                                                                    {pred.label}
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* Footer */}
+                    <footer className="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500 no-print">
+                        <div className="max-w-6xl mx-auto px-4 space-y-1">
+                            <p>© 2026 Portal Digital Sekolah.</p>
+                            <p className="text-slate-400">...</p>
+                        </div>
+                    </footer>
+                </div>
+            );
+        }
+
+        const App = () => (
+            <ErrorBoundary>
+                <MainApp />
+            </ErrorBoundary>
+        );
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
